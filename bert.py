@@ -45,7 +45,16 @@ class BertSelfAttention(nn.Module):
     # multiply the attention scores to the value and get back V' 
 
     # next, we need to concat multi-heads and recover the original shape [bs, seq_len, num_attention_heads * attention_head_size = hidden_size]
-    raise NotImplementedError
+
+    bs, _ , seq_len, att_dim = key.shape
+    attention_scores = torch.matmul(query,key.transpose(-1,-2))
+    attention_scores = attention_scores/att_dim**0.5
+    attention_scores += attention_mask
+    attention_probs = F.softmax(attention_scores, dim=-1)
+    attended_values = torch.matmul(attention_probs, value)
+    attended_values = attended_values.transpose(1,2).contiguous()
+    output = attended_values.view(bs,seq_len,self.all_head_size)
+    return output
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -89,8 +98,10 @@ class BertLayer(nn.Module):
     dropout: the dropout to be applied 
     ln_layer: the layer norm to be applied
     """
-    # todo
-    raise NotImplementedError
+    output = dense_layer(output)
+    output = dropout(output)
+    output = ln_layer(output + input)
+    return output
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -104,15 +115,14 @@ class BertLayer(nn.Module):
     """
     # todo
     # multi-head attention w/ self.self_attention
-
+    output = self.self_attention(hidden_states,attention_mask)
     # add-norm layer
-
+    temp = self.add_norm(hidden_states,output,self.attention_dense,self.attention_dropout,self.attention_layer_norm)
     # feed forward
-
+    output = self.interm_af(self.interm_dense(temp))
     # another add-norm layer
-
-
-    raise NotImplementedError
+    output = self.add_norm(temp,output,self.out_dense,self.out_dropout,self.out_layer_norm)
+    return output
 
 
 class BertModel(BertPreTrainedModel):
@@ -152,26 +162,26 @@ class BertModel(BertPreTrainedModel):
 
     # get word embedding from self.word_embedding
     # todo
-    inputs_embeds = None
+    inputs_embeds = self.word_embedding(input_ids)
 
 
     # get position index and position embedding from self.pos_embedding
     # todo
     pos_ids = self.position_ids[:, :seq_length]
-    pos_embeds = None
+    pos_embeds = self.pos_embedding(pos_ids)
 
     # get token type ids. since we are not considering token types, this is just a placeholder
-    tk_type_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
-    tk_type_embeds = self.tk_type_embedding(tk_type_ids)
+    token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
+    token_type_embeds = self.tk_type_embedding(token_type_ids)
 
     # add these three embeddings together
-    embeds = inputs_embeds + tk_type_embeds + pos_embeds
+    embeds = inputs_embeds + token_type_embeds + pos_embeds
 
     # apply layer norm and dropout
     embeds = self.embed_layer_norm(embeds)
     embeds = self.embed_dropout(embeds)
 
-    raise NotImplementedError
+    return embeds
 
   def encode(self, hidden_states, attention_mask):
     """
